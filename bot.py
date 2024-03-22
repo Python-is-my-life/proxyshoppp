@@ -16,6 +16,13 @@ from keyboards import *
 from rules import get_rules
 from country import COUNTRY
 
+##############################
+# Изменение от Lakich
+from AsyncPayments.lolz import AsyncLolzteamMarketPayment
+
+lolz = AsyncLolzteamMarketPayment("Token", 1, "UserNickname") # 1 - UserID
+
+##############################
 
 #asyncio.run(getRates())
 
@@ -504,7 +511,7 @@ async def get_deposit_main(call):
 	await bot.delete_message(chat_id = call.from_user.id, message_id= call.message.message_id)
 	await bot.send_photo(chat_id=call.from_user.id, photo=MENU_IMAGE, caption = '<b>🌐 Выберите способ оплаты:</b>', reply_markup = await deposit_keyboard())
 
-@dp.message_handler(text = '💳 QIWI/CARD')
+@dp.message_handler(text = '💳 Lolzteam')
 @dp.throttled(anti_flood,rate=0)
 async def get_summa_qiwi(message):
 	await QIWI_DEPOSIT.GET_AMOUNT.set()
