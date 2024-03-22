@@ -3,11 +3,19 @@ from config import *
 from aiogram import Bot, Dispatcher, executor, types
 from pycbrf.toolbox import ExchangeRates
 import datetime
-from pyqiwip2p import QiwiP2P
 from keyboards import *
 from rules import get_rules
 import random
 import requests
+import uuid
+
+##############################
+# Изменение от Lakich
+from AsyncPayments.lolz import AsyncLolzteamMarketPayment
+
+lolz = AsyncLolzteamMarketPayment("Token", 1, "UserNickname") # 1 - UserID
+
+##############################
 
 bot = Bot(token=BOT_TOKEN, parse_mode='HTML')
 
@@ -150,49 +158,41 @@ async def getRates(cost=0):
 	except Exception as e:
 		raise e
 
-async def QIWI_PAY(summa, user_id):
-	try:
-		#conn = sqlite3.connect('db.db', check_same_thread=False)
-		#cursor = conn.cursor()
-		#cursor.execute('SELECT QIWI_KEY FROM settings')
-		#QIWI_KEY = cursor.fetchone()[0]
-		#conn.close()
-		qid = user_id + random.randint(1111111, 9999999)
-		p2p = QiwiP2P(auth_key=QIWI_KEY)
-		new_bill = p2p.bill(bill_id=qid, amount=summa, lifetime=30, comment = "PROXY_BOT")
-		keyboard = types.InlineKeyboardMarkup(row_width = 2)
-		buttons = [
-		types.InlineKeyboardButton(text = "💳 Оплатить", url = new_bill.pay_url),
-		types.InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f'CheckQiwi_{qid}'),
-		#types.InlineKeyboardButton(text = "🔘 В меню", callback_data = 'menu')
-		]
-		keyboard.add(*buttons)
-		#await bot.send_sticker(chat_id = user_id, sticker='CAACAgIAAxkBAAEEhsdiYVAvtORuUygm70_B1w4CA-9QGAACzRMAAl6zyEvD5PzG428z7yQE', reply_markup= await menu_keyboard(user_id))
-		await bot.send_message(chat_id = user_id, text = f'<b><i>💴 Сумма к оплате: {summa} RUB</i></b>', reply_markup = keyboard)
-	except Exception as e:
-		await bot.send_message(chat_id = ADMIN, text = f'Ошибка пополнения QIWI:\n{e}')
-		await menu(user_id)
-		await bot.send_message(chat_id = user_id, text ='<b><i>Депозит через QIWI временно недоступно...\nМы уже занимаемся этим вопросом</i></b>')
+async def LOLZ_PAY(summa, user_id):
+    try:
+	unique_comment = str(uuid.uuid4())
+        # Создаём ссылку для оплаты для Lolzteam
+        payment_link = lolz.get_payment_link(summa, comment=unique_comment)
+        
+        # Отправляем ссылку для оплаты пользователю
+        await bot.send_message(chat_id=user_id, text=f'<b><i>💴 Сумма к оплате: {summa} RUB</i></b>', reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton(text="💳 Оплатить", url=payment_link)))
+    except Exception as e:
+        await bot.send_message(chat_id=ADMIN, text=f'Ошибка пополнения Lolzteam:\n{e}')
+        await menu(user_id)
+        await bot.send_message(chat_id=user_id, text='<b><i>Депозит через Lolzteam временно недоступно...\nМы уже занимаемся этим вопросом</i></b>')
+	    
+async def check_lolzteam(call):
+    pid = call.data[10:]
+    amount = float(pid) 
+    comment = "Your_Comment" 
 
-async def check_qiwi(call):
-	pid = call.data[10:]
-	p2p = QiwiP2P(auth_key=QIWI_KEY)
-	status = p2p.check(bill_id=pid).status
-	if status == 'PAID':
-		await bot.delete_message(chat_id = call.from_user.id, message_id = call.message.message_id)
-		amount = p2p.check(bill_id=pid).amount
-		conn = sqlite3.connect('db.db', check_same_thread=False)
-		cursor = conn.cursor()
-		cursor.execute('UPDATE settings SET all_deposits = all_deposits + (?)', (amount,))
-		cursor.execute('UPDATE users SET all_deposit = all_deposit + (?) WHERE user_id = (?)', (amount, call.from_user.id))
-		cursor.execute('UPDATE users SET balance = balance + (?) WHERE user_id = (?)', (amount, call.from_user.id))
-		conn.commit()
-		conn.close()
-		await menu(call.from_user.id)
-		await call.message.answer(f'✅ <b>Начислено</b> <i>{amount}</i> <b>RUB на баланс</b>')
-		await bot.send_message(ADMIN, f'<b>✅ Новое пополнение!:\n\n<i>Пользователь: @{call.message.chat.username}\nСумма {amount} RUB \nМетод: QIWI/CARD\nID платежа: <code>{pid}</code></i></b>')
-	else:
-		await call.answer(f'⛔️ Оплата не замечена',show_alert=False)
+    # Check payment status
+    is_paid = await lolz.check_status_payment(pay_amount=amount, comment=comment)
+
+    if is_paid:
+        await bot.delete_message(chat_id=call.from_user.id, message_id=call.message.message_id)
+        conn = sqlite3.connect('db.db', check_same_thread=False)
+        cursor = conn.cursor()
+        cursor.execute('UPDATE settings SET all_deposits = all_deposits + (?)', (amount,))
+        cursor.execute('UPDATE users SET all_deposit = all_deposit + (?) WHERE user_id = (?)', (amount, call.from_user.id))
+        cursor.execute('UPDATE users SET balance = balance + (?) WHERE user_id = (?)', (amount, call.from_user.id))
+        conn.commit()
+        conn.close()
+        await menu(call.from_user.id)
+        await call.message.answer(f'✅ <b>Начислено</b> <i>{amount}</i> <b>RUB на баланс</b>')
+        await bot.send_message(ADMIN, f'<b>✅ Новое пополнение!:\n\n<i>Пользователь: @{call.message.chat.username}\nСумма {amount} RUB \nМетод: Lolzteam\nID платежа: <code>{pid}</code></i></b>')
+    else:
+        await call.answer(f'⛔️ Оплата не замечена', show_alert=False)
 
 
 
